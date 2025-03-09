@@ -26,45 +26,14 @@ const getChats = async (req, res) => {
     }
 };
 
-// Создание нового чата
-const createChat = async (req, res) => {
-    try {
-        const { participants, isGroup, groupName } = req.body;
-        const username = req.user.username;
-
-        const user = await User.findOne({ username });
-        if (!user) {
-            return res.status(404).json({ error: "Пользователь не найден" });
-        }
-
-        const userId = user._id;
-
-        const users = await User.find({ _id: { $in: participants } });
-        if (users.length !== participants.length) {
-            return res.status(400).json({ error: 'Один или несколько участников не найдены' });
-        }
-
-        const newChat = new Chat({
-            participants: [...participants, userId],
-            isGroup,
-            groupName: isGroup ? groupName : null,
-            groupAdmin: isGroup ? userId : null
-        });
-
-        await newChat.save();
-
-        res.status(201).json({ chat: newChat });
-    } catch (error) {
-        console.error("Ошибка при создании чата:", error);
-        res.status(500).json({ error: 'Ошибка при создании чата' });
-    }
-};
-
 // Создание чата между двумя пользователями
 const createPrivateChat = async (req, res) => {
     try {
         const { participantId } = req.body;
         const username = req.user.username;
+
+        // Логирование данных
+        console.log("Запрос на создание чата. Пользователь:", username, "ParticipantId:", participantId);
 
         const user = await User.findOne({ username });
         if (!user) {
@@ -78,12 +47,14 @@ const createPrivateChat = async (req, res) => {
             return res.status(404).json({ error: "Участник не найден" });
         }
 
+        // Проверяем наличие уже существующего чата между пользователями
         const existingChat = await Chat.findOne({
             participants: { $all: [userId, participantId] },
             isGroup: false
         }).populate("participants", "username");
 
         if (existingChat) {
+            console.log("Чат уже существует:", existingChat);
             return res.status(200).json({ chat: existingChat });
         }
 
@@ -139,7 +110,6 @@ const getChatById = async (req, res) => {
 
 module.exports = {
     getChats,
-    createChat,
     createPrivateChat,
     getChatById
 };

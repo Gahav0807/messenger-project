@@ -1,35 +1,55 @@
 import { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL;
-const socket = io(API_BASE_URL); // Подключаемся к WebSocket
+const socket = io(API_BASE_URL);
 
 export default function MessengerHome() {
   const [chats, setChats] = useState([]);
   const [currentChat, setCurrentChat] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
-  const [username, setUsername] = useState("");
+  const [userId, setUserId] = useState("");
+  const [users, setUsers] = useState([]);
+  const [selectedUser, setSelectedUser] = useState("");
 
   const accessToken = localStorage.getItem("accessToken");
   const refreshToken = localStorage.getItem("refreshToken");
 
+  const navigate = useNavigate();
+
+  const logout = () => {
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("refreshToken");
+    socket.disconnect();
+    navigate("/login");
+  };
+
+  useEffect(() => {
+    if (!accessToken) {
+      navigate("/login");
+    }
+  }, []);
+
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const res = await axios.get(`${API_BASE_URL}/auth/me`, {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "x-refresh-token": refreshToken,
-          },
-        });
-        setUsername(res.data.username);
+        const res = await axios.post(
+          `${API_BASE_URL}/auth/check`,
+          { refreshToken },
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          }
+        );
+        setUserId(res.data.userId);
       } catch (err) {
         console.error("Ошибка получения пользователя", err);
       }
     };
-
     fetchUser();
   }, []);
 
@@ -39,7 +59,6 @@ export default function MessengerHome() {
         const res = await axios.get(`${API_BASE_URL}/chats`, {
           headers: {
             Authorization: `Bearer ${accessToken}`,
-            "x-refresh-token": refreshToken,
           },
         });
         setChats(res.data.chats);
@@ -51,6 +70,40 @@ export default function MessengerHome() {
   }, []);
 
   useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const res = await axios.get(`${API_BASE_URL}/users`, {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        });
+        setUsers(res.data.users);
+      } catch (err) {
+        console.error("Ошибка загрузки пользователей", err);
+      }
+    };
+    fetchUsers();
+  }, []);
+
+  const createChat = async () => {
+    if (!selectedUser) return;
+    try {
+        const res = await axios.post(
+            `${API_BASE_URL}/chats`,
+            { participantId: selectedUser }, 
+            {
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                },
+            }
+        );
+        setChats([...chats, res.data.chat]);
+    } catch (err) {
+        console.error("Ошибка создания чата", err);
+    }
+};
+
+  useEffect(() => {
     if (currentChat) {
       socket.emit("joinChat", currentChat._id);
 
@@ -59,7 +112,6 @@ export default function MessengerHome() {
           const res = await axios.get(`${API_BASE_URL}/chats/${currentChat._id}`, {
             headers: {
               Authorization: `Bearer ${accessToken}`,
-              "x-refresh-token": refreshToken,
             },
           });
           setMessages(res.data.messages);
@@ -83,13 +135,11 @@ export default function MessengerHome() {
 
   const sendMessage = () => {
     if (!newMessage.trim()) return;
-
     socket.emit("sendMessage", {
       chatId: currentChat._id,
-      sender: username,
+      sender: userId,
       content: newMessage,
     });
-
     setNewMessage("");
   };
 
@@ -106,55 +156,66 @@ export default function MessengerHome() {
               }`}
               onClick={() => setCurrentChat(chat)}
             >
-              {chat.groupName || chat.participants.map((p) => p.username).join(", ")}
+              {chat.participants.map((p) => p.username).join(", ")}
             </li>
           ))}
         </ul>
+
+        <select
+          className="mt-4 p-2 border rounded w-full"
+          value={selectedUser}
+          onChange={(e) => setSelectedUser(e.target.value)}
+        >
+          <option value="">Выберите пользователя</option>
+          {users.map((user) => (
+            <option key={user._id} value={user._id}>
+              {user.username}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={createChat}
+          className="mt-2 bg-green-600 hover:bg-green-700 text-white font-semibold px-4 py-2 rounded-lg transition w-full"
+        >
+          Создать чат
+        </button>
+
+        <button
+          onClick={logout}
+          className="mt-4 bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition w-full"
+        >
+          Выйти
+        </button>
       </aside>
 
       <main className="w-2/3 p-6 flex flex-col bg-white">
         {currentChat ? (
           <>
             <h2 className="text-2xl font-bold text-gray-900 mb-4">
-              {currentChat.groupName || currentChat.participants.map((p) => p.username).join(", ")}
+              {currentChat.participants.map((p) => p.username).join(", ")}
             </h2>
-
             <div className="flex-1 overflow-y-auto border rounded-lg p-3 bg-gray-50 shadow-inner">
               {messages.map((msg) => (
-                <div
-                  key={msg._id}
-                  className={`p-2 my-1 border-b border-gray-300 ${
-                    msg.sender.username === username ? "text-right" : "text-left"
-                  }`}
-                >
-                  <strong className={msg.sender.username === username ? "text-blue-600" : "text-gray-800"}>
-                    {msg.sender.username}: 
-                  </strong>
-                  <span className="text-gray-800">{msg.content}</span>
+                <div key={msg._id} className="p-2 my-1 border-b border-gray-300">
+                  <strong>{msg.sender.username}: </strong>
+                  {msg.content}
                 </div>
               ))}
             </div>
-
             <div className="mt-4 flex">
               <input
                 type="text"
-                className="flex-1 border rounded-lg p-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex-1 border rounded-lg p-3"
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
-                placeholder="Введите сообщение..."
               />
-              <button
-                onClick={sendMessage}
-                className="ml-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-4 py-2 rounded-lg transition"
-              >
+              <button onClick={sendMessage} className="ml-2 bg-blue-600 text-white px-4 py-2 rounded-lg">
                 Отправить
               </button>
             </div>
           </>
         ) : (
-          <div className="flex items-center justify-center h-full text-gray-500">
-            Выберите чат для общения
-          </div>
+          <div className="flex items-center justify-center h-full text-gray-500">Выберите чат для общения</div>
         )}
       </main>
     </div>

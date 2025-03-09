@@ -22,8 +22,8 @@ const registerUser = async (req, res) => {
     const newUser = new User({ username, password });
     await newUser.save();
 
-    const accessToken = generateAccessToken(newUser.username);
-    const refreshToken = generateRefreshToken(newUser.username);
+    const accessToken = generateAccessToken(newUser.username, newUser._id);
+    const refreshToken = generateRefreshToken(newUser.username, newUser._id);
 
     logger.info(`Пользователь ${username} зарегистрирован.`);
     res.status(201).json({ message: 'Регистрация успешна', username, accessToken, refreshToken });
@@ -42,8 +42,8 @@ const loginUser = async (req, res) => {
       return res.status(400).json({ error: 'Неверные данные' });
     }
 
-    const accessToken = generateAccessToken(user.username, user.is_admin);
-    const refreshToken = generateRefreshToken(user.username, user.is_admin);
+    const accessToken = generateAccessToken(user.username, user._id);
+    const refreshToken = generateRefreshToken(user.username, user._id);
 
     logger.info(`Пользователь ${username} вошел в систему.`);
     res.status(200).json({ message: 'Вход успешен', accessToken, refreshToken });
@@ -91,6 +91,7 @@ const checkAuth = async (req, res) => {
     res.json({
       authenticated: true,
       username: decodedUser.username,
+      userId: user._id,
       accessToken: newAccessToken,
       refreshToken: newRefreshToken,
     });

@@ -13,11 +13,10 @@ const generateRandomPassword = () => crypto.randomBytes(8).toString('hex');
 /**
  * Генерирует access token.
  * @param {string} username - Имя пользователя.
- * @param {boolean} isAdmin - Является ли пользователь администратором.
  * @returns {string} Access token.
  */
-const generateAccessToken = (username) => {
-  return jwt.sign({ username }, ACCESS_TOKEN_SECRET, { expiresIn: '15m' });
+const generateAccessToken = (username, userId) => {
+  return jwt.sign({ username, userId }, ACCESS_TOKEN_SECRET, { expiresIn: '15m' });
 };
 
 /**
@@ -25,8 +24,8 @@ const generateAccessToken = (username) => {
  * @param {string} username - Имя пользователя.
  * @returns {string} Refresh token.
  */
-const generateRefreshToken = (username) => {
-  return jwt.sign({ username }, REFRESH_TOKEN_SECRET, { expiresIn: '7d' });
+const generateRefreshToken = (username, userId) => {
+  return jwt.sign({ username, userId }, REFRESH_TOKEN_SECRET, { expiresIn: '7d' });
 };
 
 /**
