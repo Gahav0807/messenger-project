@@ -20,6 +20,7 @@ const Register = () => {
       localStorage.setItem('accessToken', response.data.accessToken);
       localStorage.setItem('refreshToken', response.data.refreshToken);
       
+      navigate('/');
     } catch (error) {
       if (error.response && error.response.status === 400) {
         toast.error('Пользователь с таким именем уже существует');
