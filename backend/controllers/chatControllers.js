@@ -42,6 +42,10 @@ const createPrivateChat = async (req, res) => {
 
         const userId = user._id;
 
+        if(participantId === userId) {
+            return res.status(400).json({ error: "Нельзя создать чат с самим собой" });
+        }
+
         const participant = await User.findById(participantId);
         if (!participant) {
             return res.status(404).json({ error: "Участник не найден" });
