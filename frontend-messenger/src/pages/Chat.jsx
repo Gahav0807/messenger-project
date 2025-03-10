@@ -23,6 +23,10 @@ export default function MessengerHome() {
 
   const navigate = useNavigate();
 
+  const toggleChat = (chat) => {
+    setCurrentChat((prevChat) => (prevChat?._id === chat._id ? null : chat));
+  };
+
   const logout = () => {
     localStorage.removeItem("accessToken");
     localStorage.removeItem("refreshToken");
@@ -74,25 +78,28 @@ export default function MessengerHome() {
           params: { username: searchQuery },
           headers: { Authorization: `Bearer ${accessToken}` },
         });
-        setUsers(res.data.users);
-        setShowUserList(res.data.users.length > 0);
+
+        const filteredUsers = res.data.users.filter(user => user._id !== userId);
+        
+        setUsers(filteredUsers);
+        setShowUserList(filteredUsers.length > 0);
       } catch (err) {
         if (err.response && err.response.status === 404) {
           toast.error("Пользователь не найден");
         } else {
           console.error("Ошибка загрузки пользователей", err);
         }
-        setUsers([]); // Очистить список пользователей
+        setUsers([]);
         setShowUserList(false);
       }
     };
-  
+
     if (searchQuery) {
       fetchUsers();
     } else {
       setShowUserList(false);
     }
-  }, [searchQuery]);  
+  }, [searchQuery, userId]);
 
   const chatExists = (selectedUserId) => {
     return chats.some((chat) =>
@@ -114,7 +121,7 @@ export default function MessengerHome() {
       );
       setChats([...chats, res.data.chat]);
       setShowUserList(false);
-      setSearchQuery(""); // Очистить поиск после создания чата
+      setSearchQuery("");
       toast.success("Чат успешно создан!");
     } catch (err) {
       console.error("Ошибка создания чата", err);
@@ -162,7 +169,6 @@ export default function MessengerHome() {
   return (
     <div className="flex flex-col h-screen bg-gray-100">
       <Toaster richColors position="top-center" />
-      {/* ХЕДЕР */}
       <header className="w-full bg-white shadow-md p-4 flex justify-between items-center border-b border-gray-300 relative">
         <h2 className="text-xl font-bold text-gray-800">Привет, {username}!</h2>
         
@@ -198,7 +204,6 @@ export default function MessengerHome() {
       </header>
 
       <div className="flex flex-1">
-        {/* Боковая панель с чатами */}
         <aside className="w-1/3 bg-white shadow-lg p-4 border-r border-gray-300">
           <h3 className="text-xl font-semibold text-gray-700 mb-4">Чаты</h3>
           <ul className="space-y-2">
@@ -208,26 +213,41 @@ export default function MessengerHome() {
                 className={`p-3 rounded-lg cursor-pointer transition ${
                   currentChat?._id === chat._id ? "bg-blue-500 text-white" : "hover:bg-gray-200"
                 }`}
-                onClick={() => setCurrentChat(chat)}
+                onClick={() => toggleChat(chat)}
               >
-                {chat.participants.map((p) => p.username).join(", ")}
+                {chat.participants
+                  .filter((p) => p._id !== userId)
+                  .map((p) => p.username)
+                  .join(", ")}
               </li>
             ))}
           </ul>
         </aside>
 
-        {/* Окно чата */}
         <main className="w-2/3 p-6 flex flex-col bg-white shadow-lg rounded-lg">
           {currentChat ? (
             <>
               <h2 className="text-2xl font-bold text-gray-900 mb-4">
-                {currentChat.participants.map((p) => p.username).join(", ")}
+                {currentChat.participants
+                  .filter((p) => p._id !== userId)
+                  .map((p) => p.username)
+                  .join(", ")}
               </h2>
               <div className="flex-1 overflow-y-auto border rounded-lg p-3 bg-gray-50 shadow-inner">
                 {messages.map((msg) => (
-                  <div key={msg._id} className="p-2 my-1 border-b border-gray-300">
-                    <strong>{msg.sender.username}: </strong>
-                    {msg.content}
+                  <div
+                    key={msg._id}
+                    className={`flex ${msg.sender._id === userId ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`max-w-[70%] p-3 rounded-lg ${
+                        msg.sender._id === userId
+                          ? "bg-blue-500 text-white"
+                          : "bg-gray-200 text-black"
+                      }`}
+                    >
+                      {msg.content}
+                    </div>
                   </div>
                 ))}
               </div>
