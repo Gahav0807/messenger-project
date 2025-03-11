@@ -11,8 +11,48 @@ export default function SearchPage() {
   const [isLoading, setIsLoading] = useState(false);
 
   const accessToken = localStorage.getItem("accessToken");
+  const refreshToken = localStorage.getItem("refreshToken");
   const userId = localStorage.getItem("userId");
   const navigate = useNavigate();
+
+  // Функция для обновления токенов в localStorage
+  const updateTokens = (newAccessToken, newRefreshToken) => {
+    localStorage.setItem("accessToken", newAccessToken);
+    localStorage.setItem("refreshToken", newRefreshToken);
+  };
+
+  // Обертка для axios, которая будет отслеживать заголовки и обновлять токены
+  const axiosWithAuth = axios.create({
+    baseURL: API_BASE_URL,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "x-refresh-token": refreshToken,
+    },
+  });
+
+  // Перехватчик ответов для обновления токенов
+  axiosWithAuth.interceptors.response.use(
+    (response) => {
+      const newAccessToken = response.headers["x-access-token"];
+      const newRefreshToken = response.headers["x-refresh-token"];
+
+      if (newAccessToken && newRefreshToken) {
+        updateTokens(newAccessToken, newRefreshToken);
+      }
+
+      return response;
+    },
+    (error) => {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        // Если токен истёк или недействителен, перенаправляем на страницу входа
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("refreshToken");
+        localStorage.removeItem("userId");
+        navigate("/login");
+      }
+      return Promise.reject(error);
+    }
+  );
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -23,9 +63,8 @@ export default function SearchPage() {
 
       setIsLoading(true);
       try {
-        const res = await axios.get(`${API_BASE_URL}/users`, {
+        const res = await axiosWithAuth.get("/users", {
           params: { username: searchQuery },
-          headers: { Authorization: `Bearer ${accessToken}` },
         });
 
         const filteredUsers = res.data.users.filter((user) => user._id !== userId);
@@ -53,15 +92,11 @@ export default function SearchPage() {
     }, 300); // Задержка 300 мс
 
     return () => clearTimeout(delayDebounceFn); // Очищаем таймер при каждом изменении searchQuery
-  }, [searchQuery, accessToken, userId]);
+  }, [searchQuery, userId]);
 
   const createChat = async (participantId) => {
     try {
-      const res = await axios.post(
-        `${API_BASE_URL}/chats`,
-        { participantId },
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
+      const res = await axiosWithAuth.post("/chats", { participantId });
       toast.success("Чат успешно создан!");
       navigate("/"); // Возвращаемся на главную страницу после создания чата
     } catch (err) {

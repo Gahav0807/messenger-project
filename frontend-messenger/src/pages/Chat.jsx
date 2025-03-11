@@ -6,7 +6,6 @@ import { toast, Toaster } from "sonner";
 import SearchPage from "./SearchPage";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL;
-const socket = io(API_BASE_URL);
 
 export default function MessengerHome() {
   const [chats, setChats] = useState([]);
@@ -16,29 +15,13 @@ export default function MessengerHome() {
   const [userId, setUserId] = useState("");
   const [username, setUsername] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 768);
+  const [socket, setSocket] = useState(null);
 
   const accessToken = localStorage.getItem("accessToken");
   const refreshToken = localStorage.getItem("refreshToken");
-
   const navigate = useNavigate();
-  const messagesEndRef = useRef(null); // Реф для скролла к последнему сообщению
+  const messagesEndRef = useRef(null);
 
-  const toggleChat = (chat) => {
-    setCurrentChat((prevChat) => (prevChat?._id === chat._id ? null : chat));
-    if (window.innerWidth <= 768) {
-      setIsSidebarOpen(false);
-    }
-  };
-
-  const logout = () => {
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("refreshToken");
-    localStorage.removeItem("userId"); // Очищаем userId при выходе
-    socket.disconnect();
-    navigate("/login");
-  };
-
-  // Скролл к последнему сообщению
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -50,69 +33,92 @@ export default function MessengerHome() {
   }, []);
 
   useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const res = await axios.post(
-          `${API_BASE_URL}/auth/check`,
-          { refreshToken },
-          { headers: { Authorization: `Bearer ${accessToken}` } }
-        );
-        setUserId(res.data.userId);
-        setUsername(res.data.username);
-        localStorage.setItem("userId", res.data.userId); // Сохраняем userId в localStorage
-      } catch (err) {
-        console.error("Ошибка получения пользователя", err);
-      }
+    const newSocket = io(API_BASE_URL, {
+      transports: ["websocket"],
+    });
+
+    newSocket.on("receiveMessage", (message) => {
+      setMessages((prevMessages) => [...prevMessages, message]);
+      scrollToBottom();
+    });
+
+    setSocket(newSocket);
+
+    return () => {
+      newSocket.disconnect();
     };
-    fetchUser();
   }, []);
 
-  useEffect(() => {
-    const fetchChats = async () => {
-      try {
-        const res = await axios.get(`${API_BASE_URL}/chats`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        setChats(res.data.chats);
-      } catch (err) {
-        console.error("Ошибка загрузки чатов", err);
+  const axiosWithAuth = axios.create({
+    baseURL: API_BASE_URL,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "x-refresh-token": refreshToken,
+    },
+  });
+
+  axiosWithAuth.interceptors.response.use(
+    (response) => {
+      const newAccessToken = response.headers["x-access-token"];
+      const newRefreshToken = response.headers["x-refresh-token"];
+      if (newAccessToken && newRefreshToken) {
+        localStorage.setItem("accessToken", newAccessToken);
+        localStorage.setItem("refreshToken", newRefreshToken);
       }
-    };
+      return response;
+    },
+    (error) => {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        logout();
+      }
+      return Promise.reject(error);
+    }
+  );
+
+  const fetchUser = async () => {
+    try {
+      const res = await axiosWithAuth.post("/auth/check", { refreshToken });
+      setUserId(res.data.userId);
+      setUsername(res.data.username);
+      localStorage.setItem("userId", res.data.userId);
+    } catch (err) {
+      console.error("Ошибка получения пользователя", err);
+    }
+  };
+
+  const fetchChats = async () => {
+    try {
+      const res = await axiosWithAuth.get("/chats");
+      setChats(res.data.chats);
+    } catch (err) {
+      console.error("Ошибка загрузки чатов", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchUser();
     fetchChats();
   }, []);
 
   useEffect(() => {
-    if (currentChat) {
+    if (currentChat && socket) {
       socket.emit("joinChat", currentChat._id);
 
       const fetchMessages = async () => {
         try {
-          const res = await axios.get(`${API_BASE_URL}/chats/${currentChat._id}`, {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          });
+          const res = await axiosWithAuth.get(`/chats/${currentChat._id}`);
           setMessages(res.data.messages);
-          scrollToBottom(); // Скролл к последнему сообщению после загрузки
+          scrollToBottom();
         } catch (err) {
           console.error("Ошибка загрузки сообщений", err);
         }
       };
       fetchMessages();
     }
-  }, [currentChat]);
-
-  useEffect(() => {
-    socket.on("receiveMessage", (message) => {
-      setMessages((prevMessages) => [...prevMessages, message]);
-      scrollToBottom(); // Скролл к последнему сообщению при получении нового
-    });
-
-    return () => {
-      socket.off("receiveMessage");
-    };
-  }, []);
+  }, [currentChat, socket]);
 
   const sendMessage = () => {
-    if (!newMessage.trim()) return;
+    if (!newMessage.trim() || !currentChat || !socket) return;
     socket.emit("sendMessage", {
       chatId: currentChat._id,
       sender: userId,
@@ -121,15 +127,36 @@ export default function MessengerHome() {
     setNewMessage("");
   };
 
+  const logout = () => {
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("refreshToken");
+    localStorage.removeItem("userId");
+    socket?.disconnect();
+    navigate("/login");
+  };
+
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-indigo-900 text-white">
       <Toaster richColors position="top-center" />
       <header className="w-full bg-black/50 shadow-md p-4 flex justify-between items-center border-b border-purple-500">
         <button
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          className="md:hidden p-2 bg-purple-600 hover:bg-purple-700 rounded-lg"
+          className="md:hidden p-2 rounded-lg"
         >
-          ☰
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-6 w-6 text-purple-500"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 6h16M4 12h16M4 18h16"
+            />
+          </svg>
         </button>
         <h2 className="text-xl font-bold">Привет, {username}!</h2>
         <button
@@ -141,11 +168,10 @@ export default function MessengerHome() {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Сайдбар */}
         <aside
           className={`${
-            isSidebarOpen ? "w-64" : "w-0"
-          } bg-black/50 shadow-lg transition-all duration-300 ease-in-out overflow-hidden md:w-64`}
+            isSidebarOpen ? "w-full md:w-64" : "w-0"
+          } bg-black/50 shadow-lg transition-all duration-300 ease-in-out overflow-hidden`}
         >
           <div className="p-4">
             <h3 className="text-xl font-semibold mb-4">Чаты</h3>
@@ -158,7 +184,7 @@ export default function MessengerHome() {
                       ? "bg-purple-500 text-white"
                       : "hover:bg-purple-500/20"
                   }`}
-                  onClick={() => toggleChat(chat)}
+                  onClick={() => setCurrentChat(chat)}
                 >
                   {chat.participants
                     .filter((p) => p._id !== userId)
@@ -176,7 +202,6 @@ export default function MessengerHome() {
           </div>
         </aside>
 
-        {/* Основное содержимое */}
         <main className="flex-1 p-4 overflow-y-auto">
           <Routes>
             <Route
@@ -195,7 +220,6 @@ export default function MessengerHome() {
                         const isCurrentUser =
                           (typeof msg.sender === "string" && msg.sender === userId) ||
                           (typeof msg.sender === "object" && msg.sender._id === userId);
-
                         return (
                           <div
                             key={msg._id}
@@ -213,7 +237,7 @@ export default function MessengerHome() {
                           </div>
                         );
                       })}
-                      <div ref={messagesEndRef} /> {/* Реф для скролла */}
+                      <div ref={messagesEndRef} />
                     </div>
                     <div className="mt-4 flex">
                       <input
