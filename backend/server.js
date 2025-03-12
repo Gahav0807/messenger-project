@@ -1,34 +1,27 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const logger = require("./config/logger");
 const mongoose = require('mongoose');
 const http = require('http');
 const { Server } = require('socket.io');
-const Message = require('./models/Message'); // Подключаем модель Message
-const Chat = require('./models/Chat'); // Подключаем модель Chat
 
-const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/messenger';
+const Message = require('./models/Message'); 
+const Chat = require('./models/Chat'); 
 
-mongoose.connect(mongoUri, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-}).then(() => {
-    logger.info('✅ Подключение к MongoDB успешно');
-}).catch((error) => {
-    logger.error('❌ Ошибка подключения к MongoDB:', error);
-    process.exit(1);
-});
+const logger = require("./config/logger");
+const { connectDB } = require('./config/db');
 
 const authRoutes = require('./routes/authRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const usersRoutes = require('./routes/usersRoutes');
 
+connectDB()
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: ['http://localhost:3000', 'http://localhost:5174', 'http://localhost:5173', 'https://s-film-react-new.vercel.app'],
+        origin: ['http://localhost:3000', 'http://localhost:5174', 'http://localhost:5173', 'https://own-messenger-project.vercel.app'],
         methods: ['GET', 'POST'],
         allowedHeaders: ['Content-Type', 'Authorization', 'x-refresh-token'],
         credentials: true,
