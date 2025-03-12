@@ -38,13 +38,7 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 3000;
 
 // Настройка CORS
-app.use(cors({
-    origin: ['http://localhost:3000', 'http://localhost:5174', 'http://localhost:5173', 'https://s-film-react-new.vercel.app'],
-    methods: ['GET', 'POST', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-refresh-token'],
-    exposedHeaders: ['x-refresh-token'],
-    credentials: true,
-}));
+app.use(cors());
 
 app.use(express.json());
 
