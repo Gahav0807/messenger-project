@@ -16,12 +16,51 @@ export default function MessengerHome() {
   const [username, setUsername] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 768);
   const [socket, setSocket] = useState(null);
-  const [isLoading, setIsLoading] = useState(false); // Добавлено состояние загрузки
+  const [isLoading, setIsLoading] = useState(false);
 
-  const accessToken = localStorage.getItem("accessToken");
-  const refreshToken = localStorage.getItem("refreshToken");
+  // Получаем токены из localStorage
+  const [accessToken, setAccessToken] = useState(localStorage.getItem("accessToken"));
+  const [refreshToken, setRefreshToken] = useState(localStorage.getItem("refreshToken"));
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
+
+  // Создаем экземпляр axios с интерцепторами
+  const axiosWithAuth = axios.create({
+    baseURL: API_BASE_URL,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "x-refresh-token": refreshToken,
+    },
+  });
+
+  // Добавляем интерцептор для обработки обновления токенов
+  axiosWithAuth.interceptors.response.use(
+    (response) => {
+      // Проверяем наличие новых токенов в заголовках
+      const newAccessToken = response.headers["x-access-token"];
+      const newRefreshToken = response.headers["x-refresh-token"];
+      
+      if (newAccessToken && newRefreshToken) {
+        // Обновляем токены в состоянии и localStorage
+        setAccessToken(newAccessToken);
+        setRefreshToken(newRefreshToken);
+        localStorage.setItem("accessToken", newAccessToken);
+        localStorage.setItem("refreshToken", newRefreshToken);
+        
+        // Обновляем заголовки для будущих запросов
+        axiosWithAuth.defaults.headers["Authorization"] = `Bearer ${newAccessToken}`;
+        axiosWithAuth.defaults.headers["x-refresh-token"] = newRefreshToken;
+      }
+      return response;
+    },
+    (error) => {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        // Если ошибка авторизации, выполняем выход
+        logout();
+      }
+      return Promise.reject(error);
+    }
+  );
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -31,11 +70,15 @@ export default function MessengerHome() {
     if (!accessToken) {
       navigate("/login");
     }
-  }, []);
+  }, [accessToken, navigate]);
 
   useEffect(() => {
     const newSocket = io(API_BASE_URL, {
       transports: ["websocket"],
+      auth: {
+        token: accessToken,
+        refreshToken: refreshToken
+      }
     });
 
     newSocket.on("receiveMessage", (message) => {
@@ -43,38 +86,20 @@ export default function MessengerHome() {
       scrollToBottom();
     });
 
+    // Обработка обновления токенов от сервера
+    newSocket.on("tokenRefresh", ({ accessToken: newAccessToken, refreshToken: newRefreshToken }) => {
+      setAccessToken(newAccessToken);
+      setRefreshToken(newRefreshToken);
+      localStorage.setItem("accessToken", newAccessToken);
+      localStorage.setItem("refreshToken", newRefreshToken);
+    });
+
     setSocket(newSocket);
 
     return () => {
       newSocket.disconnect();
     };
-  }, []);
-
-  const axiosWithAuth = axios.create({
-    baseURL: API_BASE_URL,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "x-refresh-token": refreshToken,
-    },
-  });
-
-  axiosWithAuth.interceptors.response.use(
-    (response) => {
-      const newAccessToken = response.headers["x-access-token"];
-      const newRefreshToken = response.headers["x-refresh-token"];
-      if (newAccessToken && newRefreshToken) {
-        localStorage.setItem("accessToken", newAccessToken);
-        localStorage.setItem("refreshToken", newRefreshToken);
-      }
-      return response;
-    },
-    (error) => {
-      if (error.response?.status === 401 || error.response?.status === 403) {
-        logout();
-      }
-      return Promise.reject(error);
-    }
-  );
+  }, [accessToken, refreshToken]);
 
   const fetchUser = async () => {
     try {
@@ -108,7 +133,7 @@ export default function MessengerHome() {
       socket.emit("joinChat", currentChat._id);
 
       const fetchMessages = async () => {
-        setIsLoading(true); // Включаем загрузку
+        setIsLoading(true);
         try {
           const res = await axiosWithAuth.get(`/chats/${currentChat._id}`);
           setMessages(res.data.messages);
@@ -116,7 +141,7 @@ export default function MessengerHome() {
         } catch (err) {
           console.error("Ошибка загрузки сообщений", err);
         } finally {
-          setIsLoading(false); // Выключаем загрузку
+          setIsLoading(false);
         }
       };
       fetchMessages();
