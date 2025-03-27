@@ -16,6 +16,7 @@ export default function MessengerHome() {
   const [username, setUsername] = useState("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 768);
   const [socket, setSocket] = useState(null);
+  const [isLoading, setIsLoading] = useState(false); // Добавлено состояние загрузки
 
   const accessToken = localStorage.getItem("accessToken");
   const refreshToken = localStorage.getItem("refreshToken");
@@ -102,15 +103,20 @@ export default function MessengerHome() {
 
   useEffect(() => {
     if (currentChat && socket) {
+      setMessages([]);
+      setIsSidebarOpen(false);
       socket.emit("joinChat", currentChat._id);
 
       const fetchMessages = async () => {
+        setIsLoading(true); // Включаем загрузку
         try {
           const res = await axiosWithAuth.get(`/chats/${currentChat._id}`);
           setMessages(res.data.messages);
           scrollToBottom();
         } catch (err) {
           console.error("Ошибка загрузки сообщений", err);
+        } finally {
+          setIsLoading(false); // Выключаем загрузку
         }
       };
       fetchMessages();
@@ -138,14 +144,14 @@ export default function MessengerHome() {
   return (
     <div className="flex flex-col h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-indigo-900 text-white">
       <Toaster richColors position="top-center" />
-      <header className="w-full bg-black/50 shadow-md p-4 flex justify-between items-center border-b border-purple-500">
+      <header className="w-full bg-black/60 backdrop-blur-sm shadow-lg p-4 flex justify-between items-center border-b border-purple-500/50">
         <button
           onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-          className="md:hidden p-2 rounded-lg"
+          className=" p-2 rounded-lg hover:bg-purple-500/20 transition-colors"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            className="h-6 w-6 text-purple-500"
+            className="h-6 w-6 text-purple-400"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -158,10 +164,12 @@ export default function MessengerHome() {
             />
           </svg>
         </button>
-        <h2 className="text-xl font-bold">Привет, {username}!</h2>
+        <h2 className="text-xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-300">
+          Привет, {username}!
+        </h2>
         <button
           onClick={logout}
-          className="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition"
+          className="bg-red-500/80 hover:bg-red-600 text-white font-semibold px-4 py-2 rounded-lg transition-all duration-300 hover:shadow-lg hover:shadow-red-500/20"
         >
           Выйти
         </button>
@@ -170,18 +178,20 @@ export default function MessengerHome() {
       <div className="flex flex-1 overflow-hidden">
         <aside
           className={`${
-            isSidebarOpen ? "w-full md:w-64" : "w-0"
-          } bg-black/50 shadow-lg transition-all duration-300 ease-in-out overflow-hidden`}
+            isSidebarOpen ? "w-full md:w-72" : "w-0"
+          } bg-black/40 backdrop-blur-sm shadow-lg transition-all duration-300 ease-in-out overflow-hidden border-r border-purple-500/30`}
         >
           <div className="p-4">
-            <h3 className="text-xl font-semibold mb-4">Чаты</h3>
+            <h3 className="text-xl font-semibold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-300">
+              Чаты
+            </h3>
             <ul className="space-y-2">
               {chats.map((chat) => (
                 <li
                   key={chat._id}
-                  className={`p-3 rounded-lg cursor-pointer transition ${
+                  className={`p-3 rounded-lg cursor-pointer transition-all duration-300 ${
                     currentChat?._id === chat._id
-                      ? "bg-purple-500 text-white"
+                      ? "bg-purple-500/50 backdrop-blur-sm shadow-lg shadow-purple-500/20"
                       : "hover:bg-purple-500/20"
                   }`}
                   onClick={() => setCurrentChat(chat)}
@@ -195,7 +205,7 @@ export default function MessengerHome() {
             </ul>
             <Link
               to="/search"
-              className="mt-4 block bg-purple-600 hover:bg-purple-700 text-white font-semibold px-4 py-2 rounded-lg text-center"
+              className="mt-6 block bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-semibold px-4 py-2 rounded-lg text-center transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/20"
             >
               Найти пользователя
             </Link>
@@ -209,47 +219,56 @@ export default function MessengerHome() {
               element={
                 currentChat ? (
                   <>
-                    <h2 className="text-2xl font-bold mb-4">
+                    <h2 className="text-2xl font-bold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-300">
                       {currentChat.participants
                         .filter((p) => p._id !== userId)
                         .map((p) => p.username)
                         .join(", ")}
                     </h2>
-                    <div className="flex-1 overflow-y-auto border border-purple-500 rounded-lg p-3 bg-black/20 shadow-inner h-[calc(100vh-200px)]">
-                      {messages.map((msg) => {
-                        const isCurrentUser =
-                          (typeof msg.sender === "string" && msg.sender === userId) ||
-                          (typeof msg.sender === "object" && msg.sender._id === userId);
-                        return (
-                          <div
-                            key={msg._id}
-                            className={`flex ${isCurrentUser ? "justify-end" : "justify-start"}`}
-                          >
-                            <div
-                              className={`max-w-[70%] p-3 rounded-lg ${
-                                isCurrentUser
-                                  ? "bg-purple-500 text-white"
-                                  : "bg-gray-700 text-white"
-                              }`}
-                            >
-                              {msg.content}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      <div ref={messagesEndRef} />
+                    <div className="flex-1 overflow-y-auto border border-purple-500/30 rounded-lg p-3 bg-black/30 backdrop-blur-sm shadow-lg h-[calc(100vh-200px)]">
+                      {isLoading ? ( // Условный рендеринг спиннера
+                        <div className="flex items-center justify-center h-full">
+                          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+                        </div>
+                      ) : (
+                        <>
+                          {messages.map((msg) => {
+                            const isCurrentUser =
+                              (typeof msg.sender === "string" && msg.sender === userId) ||
+                              (typeof msg.sender === "object" && msg.sender._id === userId);
+                            return (
+                              <div
+                                key={msg._id}
+                                className={`flex ${isCurrentUser ? "justify-end" : "justify-start"} mb-3`}
+                              >
+                                <div
+                                  className={`max-w-[70%] p-3 rounded-lg shadow-lg ${
+                                    isCurrentUser
+                                      ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white"
+                                      : "bg-gray-800/80 backdrop-blur-sm text-gray-100"
+                                  }`}
+                                >
+                                  {msg.content}
+                                </div>
+                              </div>
+                            );
+                          })}
+                          <div ref={messagesEndRef} />
+                        </>
+                      )}
                     </div>
-                    <div className="mt-4 flex">
+                    <div className="mt-4 flex gap-2">
                       <input
                         type="text"
-                        className="flex-1 border border-purple-500 rounded-lg p-3 bg-black/50 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        className="flex-1 border border-purple-500/30 rounded-lg p-3 bg-black/30 backdrop-blur-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500/50 transition-all duration-300"
                         value={newMessage}
                         onChange={(e) => setNewMessage(e.target.value)}
                         onKeyPress={(e) => e.key === "Enter" && sendMessage()}
+                        placeholder="Введите сообщение..."
                       />
                       <button
                         onClick={sendMessage}
-                        className="ml-2 bg-purple-600 hover:bg-purple-700 text-white font-semibold px-4 py-2 rounded-lg transition"
+                        className="bg-gradient-to-r from-purple-600 to-pink-500 hover:from-purple-700 hover:to-pink-600 text-white font-semibold px-6 py-2 rounded-lg transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/20"
                       >
                         Отправить
                       </button>
@@ -257,7 +276,10 @@ export default function MessengerHome() {
                   </>
                 ) : (
                   <div className="flex items-center justify-center h-full text-gray-400">
-                    Выберите чат для общения
+                    <div className="text-center">
+                      <div className="text-6xl mb-4">💬</div>
+                      <p className="text-xl">Выберите чат для общения</p>
+                    </div>
                   </div>
                 )
               }

@@ -8,3 +8,6 @@ authRoutes.post('/login', authController.loginUser);
 authRoutes.post('/auth/check', authController.checkAuth);
 
 module.exports = authRoutes;
+
+
+
